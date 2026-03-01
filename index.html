@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Didi Runner - Victoria</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
+        canvas { display: block; margin: 0 auto; background: #87CEEB; }
+        #ui { position: absolute; top: 10px; left: 20px; color: white; text-shadow: 2px 2px black; font-size: 24px; z-index: 10; }
+        .modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9); color: white; padding: 30px;
+            border-radius: 15px; text-align: center; display: none; z-index: 20;
+            border: 3px solid #ff5733; min-width: 280px;
+        }
+        #ad-banner { 
+    position: absolute; 
+    bottom: 0; 
+    left: 50%; 
+    transform: translateX(-50%);
+    /* Cambiamos el ancho a 468px y el alto a 80px */
+    width: 468px; 
+    height: 80px; 
+    background: rgba(0, 0, 0, 0.85); /* Un negro más elegante con transparencia */
+    border-top: 3px solid #ff5733; /* Borde un poco más grueso */
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    z-index: 100;
+    box-shadow: 0px -5px 15px rgba(0,0,0,0.5); /* Añade profundidad sobre el juego */
+}
+    </style>
+</head>
+<body>
+
+    <div id="ui">Propinas: $<span id="score">0</span> / $1000</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="lose-screen" class="modal">
+        <h1 style="color:#ff5733">¡CHOQUE!</h1>
+        <p>Propinas logradas: $<span id="final-score-lose">0</span></p>
+        <button onclick="initGame()" style="padding:10px 20px; cursor:pointer; background:#ff5733; color:white; border:none; border-radius:5px;">REINTENTAR</button>
+    </div>
+
+    <div id="win-screen" class="modal">
+        <h1 style="color:#4CAF50">¡ENTREGADO!</h1>
+        <p>¡Llegaste con la cliente!</p>
+        <button onclick="initGame()" style="padding:10px 20px; cursor:pointer; background:#4CAF50; color:white; border:none; border-radius:5px;">OTRO PEDIDO</button>
+    </div>
+
+   <div id="ad-banner">
+    <div style="text-align: center; line-height: 1.2;">
+        <strong style="color: #ff5733; font-size: 16px; letter-spacing: 1px;">ANUNCIO PATROCINADO</strong><br>
+        <span style="color: white; font-size: 14px;">¡Pide en Didi Food y apoya a tu repartidor local!</span>
+    </div>
+</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+
+        canvas.width = window.innerWidth;
+        canvas.height = 450;
+
+        // --- CARGA DE IMÁGENES (CORREGIDO SEGÚN TUS ARCHIVOS .PNG) ---
+        const imgPlayer = new Image(); imgPlayer.src = 'repartidor.png';
+        const imgFondo = new Image(); imgFondo.src = 'fondo.png';
+        const imgCliente = new Image(); imgCliente.src = 'mujer_esperando.png';
+
+        const imagenesObs = {
+            bache: new Image(), bache_agua: new Image(),
+            tope_amarillo: new Image(), tope_gris: new Image(), perro: new Image()
+        };
+        imagenesObs.bache.src = 'bache.png';
+        imagenesObs.bache_agua.src = 'bache_agua.png';
+        imagenesObs.tope_amarillo.src = 'tope_amarillo.png';
+        imagenesObs.tope_gris.src = 'tope_gris.png';
+        imagenesObs.perro.src = 'perro.png';
+
+        // --- VARIABLES DE JUEGO ---
+        let score, gameActive, victoria, obstacles, gameSpeed, fondoX, player, clienteX;
+
+        function initGame() {
+            score = 0; gameActive = true; victoria = false;
+            obstacles = []; gameSpeed = 6; fondoX = 0;
+            clienteX = canvas.width + 200;
+            // El player está a 255px de altura para pisar la calle
+            player = { x: 100, y: 255, width: 110, height: 110, dy: 0, jumpForce: 15, gravity: 0.8, grounded: false };
+            document.getElementById('lose-screen').style.display = 'none';
+            document.getElementById('win-screen').style.display = 'none';
+            scoreElement.innerText = "0";
+            spawnObstacle();
+        }
+
+        const obstacleTypes = [
+            { name: 'bache', width: 80, height: 40, imgKey: 'bache' },
+            { name: 'bache_agua', width: 100, height: 45, imgKey: 'bache_agua' },
+            { name: 'tope_amarillo', width: 70, height: 45, imgKey: 'tope_amarillo' },
+            { name: 'tope_gris', width: 70, height: 45, imgKey: 'tope_gris' },
+            { name: 'perro', width: 60, height: 50, imgKey: 'perro' }
+        ];
+
+        function spawnObstacle() {
+            if (!gameActive || victoria || score >= 1000) return;
+            const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+            // Ajustamos Y para que los baches estén en el asfalto (315px)
+            let ajusteY = (type.name === 'perro') ? 285 : 315; 
+            obstacles.push({ x: canvas.width, y: ajusteY, ...type });
+            setTimeout(spawnObstacle, Math.random() * (2200 - 1100) + 1100);
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            player.dy += player.gravity;
+            player.y += player.dy;
+
+            // Suelo firme (335px es el límite de la calle gris)
+            if (player.y + player.height > 335) {
+                player.y = 335 - player.height;
+                player.dy = 0; player.grounded = true;
+            } else { player.grounded = false; }
+
+            fondoX -= gameSpeed * 0.5;
+            if (fondoX <= -canvas.width) fondoX = 0;
+
+            if (score >= 1000) {
+                victoria = true;
+                clienteX -= gameSpeed * 0.5;
+                if (player.x >= clienteX - 60) {
+                    gameActive = false;
+                    document.getElementById('win-screen').style.display = 'block';
+                }
+            }
+
+            obstacles.forEach((obs, index) => {
+                obs.x -= gameSpeed;
+                // Colisión (Hitbox ajustada)
+                if (player.x + 25 < obs.x + obs.width && player.x + player.width - 25 > obs.x &&
+                    player.y + 20 < obs.y + obs.height && player.y + player.height > obs.y) {
+                    gameActive = false;
+                    document.getElementById('final-score-lose').innerText = score;
+                    document.getElementById('lose-screen').style.display = 'block';
+                }
+                if (obs.x + obs.width < 0) {
+                    obstacles.splice(index, 1);
+                    if (!victoria) { score += 50; scoreElement.innerText = score; }
+                }
+            });
+            if (!victoria) gameSpeed += 0.0006;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Fondo infinito
+            if (imgFondo.complete) {
+                ctx.drawImage(imgFondo, fondoX, 0, canvas.width, canvas.height);
+                ctx.drawImage(imgFondo, fondoX + canvas.width, 0, canvas.width, canvas.height);
+            }
+            // Cliente meta
+            if (victoria && imgCliente.complete) {
+                ctx.drawImage(imgCliente, clienteX, 255, 100, 100);
+            }
+            // Repartidor
+            if (imgPlayer.complete) {
+                ctx.drawImage(imgPlayer, player.x, player.y, player.width, player.height);
+            }
+            // Obstáculos
+            obstacles.forEach(obs => {
+                const img = imagenesObs[obs.imgKey];
+                if (img && img.complete) {
+                    ctx.drawImage(img, obs.x, obs.y, obs.width, obs.height);
+                }
+            });
+        }
+
+        function jump() { if (gameActive && player.grounded) player.dy = -player.jumpForce; }
+
+        window.addEventListener('keydown', (e) => { if(e.code === 'Space' || e.code === 'ArrowUp') jump(); });
+        window.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); });
+
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+
+        initGame();
+        gameLoop();
+    </script>
+</body>
+</html>
